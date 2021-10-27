@@ -1,0 +1,53 @@
+hydra:
+  run:
+    dir: ./outputs/${default.output_folder}
+default:
+  train_path: '../../petfinder-pawpularity-score/train.csv'
+  test_path: '../../petfinder-pawpularity-score/test.csv'
+  train_dir: '../../petfinder-pawpularity-score/train'
+  test_dir: '../../petfinder-pawpularity-score/test'
+  ckp_dir: '../../outputs/weights'
+  n_classes: 1
+  embedding_size: 256  
+  img_size: 256
+  output_folder: "test"
+model:
+  train_batch_size: 64
+  val_batch_size: 64
+  num_epochs: 20
+  num_workers: 2
+  mode: 'classifier'  # class, only_emb, default_classifier
+  backborn: 'resnet50'
+  metric: 'ver1' # ['add_margin', 'arc_margin', 'sphere', 'linear', "ver1", "ver2"]
+target_col: 'Pawpularity'
+fold_type: "skfold"
+n_fold: 5
+input_channel: 3
+seed: 42
+gpuid: [0]
+log_path: './logs/'
+saved_path: './trained_model/'
+log_interval: 1
+save_top_model: 1
+accumulate_grad_batches: 1
+max_grad_norm: 1000
+use_mixup: True
+
+fold: 0
+pretrained: False
+
+shd_para:
+  scheduler: 'CosineAnnealingWarmRestarts'
+  factor: 0.2 # ReduceLROnPlateau
+  patience: 4 # ReduceLROnPlateau
+  eps: 1e-6 # ReduceLROnPlateau
+  T_max: 20 # CosineAnnealingLR
+  T_0: 20 # CosineAnnealingWarmRestarts
+  eta_min: 1e-5 # CosineAnnealingWarmRestarts
+  lr: 1e-4
+  min_lr: 1e-6
+wandb:
+  project: "petfinder"
+  entity: "takeru"
+
+in_kaggle: False

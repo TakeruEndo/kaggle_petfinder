@@ -1,0 +1,7 @@
+outputs
+KU_PCP_Dataset
+petfinder-pawpularity-score
+rank_image
+__pycache__
+.DS_Store
+notebook/.ipynb_checkpoints
