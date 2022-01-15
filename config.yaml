@@ -18,7 +18,7 @@ model:
   num_workers: 2
   mode: 'classifier'  # class, only_emb, default_classifier
   backborn: 'resnet50'
-  metric: 'ver1' # ['add_margin', 'arc_margin', 'sphere', 'linear', "ver1", "ver2"]
+  metric: 'mlp' # ['add_margin', 'arc_margin', 'sphere', 'linear', "ver1", "ver2"]
 target_col: 'Pawpularity'
 fold_type: "skfold"
 n_fold: 5
@@ -47,7 +47,7 @@ shd_para:
   lr: 1e-4
   min_lr: 1e-6
 wandb:
-  project: "petfinder"
-  entity: "takeru"
+  project: ""
+  entity: ""
 
 in_kaggle: False

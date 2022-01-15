@@ -1,12 +1,20 @@
+from PIL import Image
 import pandas as pd
 import numpy as np
+
 import cv2
 
+from sklearn.model_selection import train_test_split
 import torch
-from torch.utils.data import DataLoader, Dataset
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+from torch.utils.data import DataLoader, random_split, Dataset
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+from sklearn.model_selection import StratifiedKFold, GroupKFold, KFold
+
 import pytorch_lightning as pl
 
 from split_cv import get_cv
@@ -41,6 +49,7 @@ class PetDataModule(pl.LightningDataModule):
         # reset_index
         self.train_df = self.train_df.reset_index(drop=True)
         self.val_df = self.val_df.reset_index(drop=True)
+        
 
     def setup(self, stage=None):
 
@@ -50,7 +59,7 @@ class PetDataModule(pl.LightningDataModule):
                 self.config, self.train_df, self.train_transforms(), 'train')
             self.val_dataset = PetDataset(
                 self.config, self.val_df, self.valid_transforms(), 'val')
-        if stage == 'test' or stage is None:
+        if stage == 'test' or stage is None:        
             self.test_dataset = PetDataset(
                 self.config, self.test_df, self.valid_transforms(), 'test')
 
@@ -60,15 +69,14 @@ class PetDataModule(pl.LightningDataModule):
             [
                 A.RandomResizedCrop(image_size, image_size, scale=(0.85, 1.0)),
                 A.HorizontalFlip(p=0.5),
-                A.VerticalFlip(p=0.5),
+                A.VerticalFlip(p=0.5),   
                 A.ShiftScaleRotate(p=0.5),
                 # A.OneOf([
                 #     A.GaussNoise(p=1.0),
                 #     A.IAAAdditiveGaussianNoise(p=1.0),
                 #     A.MotionBlur(p=1.0)
-                # ], p=0.2),
-                A.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                            0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
+                # ], p=0.2),      
+                A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
                 ToTensorV2()
             ]
         )
@@ -79,8 +87,7 @@ class PetDataModule(pl.LightningDataModule):
         valid_transform = A.Compose(
             [
                 A.Resize(image_size, image_size),
-                A.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                            0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
+                A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
                 ToTensorV2(),
             ]
         )
@@ -138,7 +145,6 @@ class PetDataset(Dataset):
         image = cv2.imread(path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = self.transforms(image=image)['image'].float()
-
         features = self.feature.loc[index].values
         features = torch.tensor(features, dtype=torch.float)
 

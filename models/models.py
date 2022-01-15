@@ -8,48 +8,30 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 import math
 
+
 from metric_model import ArcMarginProduct, AddMarginProduct, SphereProduct
 
 
 def get_model(config):
     if config.model.mode == "mlp":
         return MLP(config)
-    elif config.model.mode == "falanx":
-        return FalanxModel(config)
     else:
-        return Custom2DCNN(config)
+         return Custom2DCNN(config)
 
-
-class FalanxModel(nn.Module):
-    """
-    Reference: https://www.kaggle.com/phalanx/train-swin-t-pytorch-lightning
-    """
-
-    def __init__(self, config):
-        self.backbone = timm.create_model(
-            config.model.backborn, pretrained=False, num_classes=0, in_chans=3
-        )
-        num_features = self.backbone.num_features
-        self.fc = nn.Sequential(
-            nn.Dropout(0.5), nn.Linear(num_features, 1)
-        )
-
-    def forward(self, x):
-        f = self.backbone(x)
-        out = self.fc(f)
-        return out
-
-
-def get_2d_backborn_model(config, hidden_size, pretrained=False):
-    model_name = config.model.backborn
+def get_2d_backbone_model(config, hidden_size, pretrained=False):
+    model_name = config.model.backbone
     model = timm.create_model(
         model_name, pretrained=pretrained, in_chans=config.input_channel)
-
+    print('Success making model')
     if 'efficientnet' in model_name:
         n_features = model.classifier.in_features
         model.classifier = nn.Identity()
         # model.global_pool = nn.Identity()
-    elif 'vit' in model_name or 'swin' in model_name or 'mixer' in model_name:
+    elif 'nfnet' in model_name:
+        n_features = model.head.fc.in_features
+        model.head.fc = nn.Identity()
+        # model.head.global_pool = nn.Identity()
+    elif 'vit' in model_name or 'swin' in model_name or 'mixer' in model_name or 'beit' in model_name:
         n_features = model.head.in_features
         model.head = nn.Identity()
     elif 'bitm' in model_name:
@@ -66,7 +48,7 @@ class Custom2DCNN(nn.Module):
         super(Custom2DCNN, self).__init__()
         emb_size = config.default.embedding_size
         num_classes = config.default.n_classes
-        self.model, n_features = get_2d_backborn_model(
+        self.model, n_features = get_2d_backbone_model(
             config, emb_size, pretrained=config.pretrained)
 
         self.metric_name = config.model.metric
@@ -82,13 +64,13 @@ class Custom2DCNN(nn.Module):
             self.linear = nn.Linear(n_features, emb_size)
             self.metric_fc = SphereProduct(emb_size, num_classes, m=4)
         elif self.metric_name == 'mlp':
-            self.classifier = MLP(config, n_features)
+            self.classifier = MlpMoldel(config, n_features)
         elif self.metric_name == 'ver1':
             self.fc1 = nn.Linear(n_features, 256)
             self.dropout = nn.Dropout(0.1)
             self.relu = nn.LeakyReLU()
             self.fc2 = nn.Linear(256, 64)
-            self.fc3 = nn.Linear(64 + 12, 1)
+            self.fc3 = nn.Linear(64+12, 1)
         elif self.metric_name == 'ver2':
             self.fc = nn.Sequential(
                 nn.Dropout(0.2),
@@ -120,7 +102,7 @@ class Custom2DCNN(nn.Module):
 
 class MLP(nn.Module):
     def __init__(self, config, input_size):
-        super(MLP, self).__init__()
+        super(MlpMoldel, self).__init__()
         self.batch_norm1 = nn.BatchNorm1d(input_size)
         self.dense1 = nn.Linear(input_size, input_size // 4)
 
