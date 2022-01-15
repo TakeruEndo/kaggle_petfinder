@@ -4,3 +4,4 @@ __pycache__
 .DS_Store
 notebook/.ipynb_checkpoints
 pytorch-image-models
+notebooks
