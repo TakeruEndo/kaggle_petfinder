@@ -5,3 +5,4 @@ __pycache__
 notebook/.ipynb_checkpoints
 pytorch-image-models
 notebooks
+configs/wandb/config.yaml

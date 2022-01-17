@@ -28,19 +28,20 @@ class PetDataModule(pl.LightningDataModule):
 
     def prepare_data(self):
 
-        train = pd.read_csv(self.config.default.train_path)
-        test = pd.read_csv(self.config.default.test_path)
+        train = pd.read_csv(self.config.data.train_path)
+        self.train_size = len(train)
+        test = pd.read_csv(self.config.data.test_path)
 
         def get_train_file_path(image_id):
-            return "{}/{}.jpg".format(self.config.default.train_dir, image_id)
+            return "{}/{}.jpg".format(self.config.data.train_dir, image_id)
 
         def get_test_file_path(image_id):
-            return "{}/{}.jpg".format(self.config.default.test_dir, image_id)
+            return "{}/{}.jpg".format(self.config.data.test_dir, image_id)
 
         train['file_path'] = train['Id'].apply(get_train_file_path)
         test['file_path'] = test['Id'].apply(get_test_file_path)
 
-        train = get_cv(train, self.config)
+        train = self.__data_split(train, self.config)
 
         self.train_df = train[train['fold'] != self.config.fold]
         self.val_df = train[train['fold'] == self.config.fold]
@@ -49,7 +50,21 @@ class PetDataModule(pl.LightningDataModule):
         # reset_index
         self.train_df = self.train_df.reset_index(drop=True)
         self.val_df = self.val_df.reset_index(drop=True)
-        
+
+    def __data_split(self, df, config):
+        df['fold'] = 0
+        fold_type = config.fold_type
+        if fold_type == 'kfold':
+            kf = KFold(n_splits=config.n_fold, shuffle=True, random_state=config.seed)
+            for i, (tr_idx, val_index) in enumerate(kf.split(df)):
+                df.loc[val_index, 'fold'] = int(i)
+        elif fold_type == 'skfold':
+            # num_bins = int(np.floor(1 + np.log2(len(df))))
+            # bins = pd.cut(df[cfg.target_col], bins=num_bins, labels=False)
+            Fold = StratifiedKFold(n_splits=config.n_fold, shuffle=True, random_state=config.seed)
+            for n, (train_index, val_index) in enumerate(Fold.split(df, df[config.data.target_col])):
+                df.loc[val_index, 'fold'] = int(n)
+        return df
 
     def setup(self, stage=None):
 
@@ -59,7 +74,7 @@ class PetDataModule(pl.LightningDataModule):
                 self.config, self.train_df, self.train_transforms(), 'train')
             self.val_dataset = PetDataset(
                 self.config, self.val_df, self.valid_transforms(), 'val')
-        if stage == 'test' or stage is None:        
+        if stage == 'test' or stage is None:
             self.test_dataset = PetDataset(
                 self.config, self.test_df, self.valid_transforms(), 'test')
 
@@ -69,13 +84,13 @@ class PetDataModule(pl.LightningDataModule):
             [
                 A.RandomResizedCrop(image_size, image_size, scale=(0.85, 1.0)),
                 A.HorizontalFlip(p=0.5),
-                A.VerticalFlip(p=0.5),   
+                A.VerticalFlip(p=0.5),
                 A.ShiftScaleRotate(p=0.5),
                 # A.OneOf([
                 #     A.GaussNoise(p=1.0),
                 #     A.IAAAdditiveGaussianNoise(p=1.0),
                 #     A.MotionBlur(p=1.0)
-                # ], p=0.2),      
+                # ], p=0.2),
                 A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
                 ToTensorV2()
             ]

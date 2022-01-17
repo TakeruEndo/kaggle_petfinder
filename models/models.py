@@ -1,130 +1,87 @@
 import sys
 sys.path.append('/kaggle/input/pytorch-image-models/pytorch-image-models-master')
-import timm
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-from torch.nn import Parameter
 import math
-
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
+import timm
 
 from metric_model import ArcMarginProduct, AddMarginProduct, SphereProduct
 
 
-def get_model(config):
-    if config.model.mode == "mlp":
-        return MLP(config)
-    else:
-         return Custom2DCNN(config)
-
-def get_2d_backbone_model(config, hidden_size, pretrained=False):
-    model_name = config.model.backbone
-    model = timm.create_model(
-        model_name, pretrained=pretrained, in_chans=config.input_channel)
-    print('Success making model')
-    if 'efficientnet' in model_name:
-        n_features = model.classifier.in_features
-        model.classifier = nn.Identity()
-        # model.global_pool = nn.Identity()
-    elif 'nfnet' in model_name:
-        n_features = model.head.fc.in_features
-        model.head.fc = nn.Identity()
-        # model.head.global_pool = nn.Identity()
-    elif 'vit' in model_name or 'swin' in model_name or 'mixer' in model_name or 'beit' in model_name:
-        n_features = model.head.in_features
-        model.head = nn.Identity()
-    elif 'bitm' in model_name:
-        n_features = 21843
-    else:
-        n_features = list(model.children())[-1].in_features
-        layers = list(model.children())[:-1]
-        return torch.nn.Sequential(*layers), n_features
-    return model, n_features
-
-
-class Custom2DCNN(nn.Module):
+class SimpleCNN(nn.Module):
     def __init__(self, config):
-        super(Custom2DCNN, self).__init__()
-        emb_size = config.default.embedding_size
-        num_classes = config.default.n_classes
-        self.model, n_features = get_2d_backbone_model(
-            config, emb_size, pretrained=config.pretrained)
+        super(SimpleCNN, self).__init__()
+        self.head_type = config.model.head
 
-        self.metric_name = config.model.metric
-        if self.metric_name == 'add_margin':
-            self.linear = nn.Linear(n_features, emb_size)
-            self.metric_fc = AddMarginProduct(
-                emb_size, num_classes, s=30, m=0.35)
-        elif self.metric_name == 'arc_margin':
-            self.linear = nn.Linear(n_features, emb_size)
-            self.metric_fc = ArcMarginProduct(
-                emb_size, num_classes, s=30, m=0.5, easy_margin=False)
-        elif self.metric_name == 'sphere':
-            self.linear = nn.Linear(n_features, emb_size)
-            self.metric_fc = SphereProduct(emb_size, num_classes, m=4)
-        elif self.metric_name == 'mlp':
-            self.classifier = MlpMoldel(config, n_features)
-        elif self.metric_name == 'ver1':
-            self.fc1 = nn.Linear(n_features, 256)
-            self.dropout = nn.Dropout(0.1)
-            self.relu = nn.LeakyReLU()
-            self.fc2 = nn.Linear(256, 64)
-            self.fc3 = nn.Linear(64+12, 1)
-        elif self.metric_name == 'ver2':
-            self.fc = nn.Sequential(
-                nn.Dropout(0.2),
-                nn.Linear(n_features, 256),
-                nn.ReLU(),
-                nn.Linear(256, 1)
-            )
+        self.backbone = timm.create_model(
+            config.model.backbone, pretrained=config.model.pretrained, in_chans=config.input_channel)
+
+        num_features = self.backbone.num_features
+        embedding_size = config.default.embedding_size
+        num_classes = config.default.n_classes
+        self.metric_loss = False
+        if self.model.head_2 == "None":
+            embedding_size = num_classes
+        elif self.model.head_2 in ["add_margin", "arc_margin", "sphere"]:
+            self.metric_loss = True
+
+        head_1_dict = {
+            "linear": nn.Linear(num_features, embedding_size),
+            "MLP": MLP(num_features, embedding_size),
+            "MLP_with_BN": MLP(num_features, embedding_size, True)
+        }
+
+        head_2_dict = {
+            "None": nn.Identity(),
+            "linear": nn.Linear(embedding_size, num_classes),
+            "linear_head_1_mix": nn.Linear(embedding_size + num_features, num_classes),
+            "MLP": MLP(embedding_size, num_classes),
+            "MLP_with_BN": MLP(embedding_size, num_classes, True),
+            "add_margin": AddMarginProduct(embedding_size, num_classes, s=30, m=0.35),
+            "arc_margin": ArcMarginProduct(embedding_size, num_classes, s=30, m=0.5, easy_margin=False),
+            "sphere": SphereProduct(embedding_size, num_classes, m=4),
+        }
+
+        self.head_1 = head_1_dict[config.model.head_1]
+        self.head_2 = head_2_dict[config.model.head_2]
 
     def forward(self, x, features, label):
-        embedder = self.model(x)
-        if self.metric_name == 'ver1':
-            out = self.relu(self.fc1(embedder))
-            out = self.dropout(out)
-            out = self.relu(self.fc2(out))
-            out = torch.cat([out, features], dim=1)
-            out = self.fc3(out)
-            return out
-        elif self.metric_name == 'ver2':
-            out = self.fc(embedder)
-            return out
-        elif self.metric_name == 'mlp':
-            out = self.classifier(embedder)
-            return out
+        x = self.backbone(x)
+        embeddings = self.head_1(x)
+        if self.metric_loss:
+            outputs = self.head_2(embeddings, label)
         else:
-            embedder = self.linear(embedder)
-            out = self.metric_fc(embedder, label)
-        return embedder, out
+            if self.config.model.head_2 == "linear_head_1_mix":
+                x = torch.cat([x, embeddings], dim=1)
+            outputs = self.head_2(x)
+        return embeddings, outputs
 
 
 class MLP(nn.Module):
-    def __init__(self, config, input_size):
-        super(MlpMoldel, self).__init__()
-        self.batch_norm1 = nn.BatchNorm1d(input_size)
-        self.dense1 = nn.Linear(input_size, input_size // 4)
-
+    def __init__(self, input_size, output_size, with_bn: bool = False, geru: bool = False):
+        super(MLP, self).__init__()
+        self.with_bn = with_bn
+        self.fc1 = nn.Linear(input_size, input_size // 2)
+        self.dropout1 = nn.Dropout(0.5)
+        self.batch_norm1 = nn.BatchNorm1d(input_size // 2)
+        self.fc2 = nn.Linear(input_size // 2, input_size // 4)
+        self.dropout2 = nn.Dropout(0.5)
         self.batch_norm2 = nn.BatchNorm1d(input_size // 4)
-        self.dropout2 = nn.Dropout(0.35)
-        self.dense2 = nn.Linear(input_size // 4, input_size // 8)
-
-        self.batch_norm3 = nn.BatchNorm1d(input_size // 8)
-        self.dropout3 = nn.Dropout(0.3)
-        self.dense3 = nn.Linear(input_size // 8, config.default.n_classes)
-
-        self.relu = nn.LeakyReLU()
+        self.fc3 = nn.Linear(input_size // 4, output_size)
+        self.relu = nn.ReLU()
+        if geru:
+            self.relu = nn.GELU()
 
     def forward(self, x):
-        x = self.batch_norm1(x)
-        x = self.relu(self.dense1(x))
-
-        x = self.batch_norm2(x)
+        x = self.relu(self.fc1(x))
+        x = self.dropout1(x)
+        if self.with_bn:
+            x = self.batch_norm1(x)
+        x = self.relu(self.fc2(x))
         x = self.dropout2(x)
-        x = self.relu(self.dense2(x))
-
-        x = self.batch_norm3(x)
-        x = self.dropout3(x)
-        x = self.dense3(x)
+        if self.with_bn:
+            x = self.batch_norm2(x)
+        x = self.fc3(x)
         return x

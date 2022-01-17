@@ -1,0 +1,6 @@
+train_path: '../../petfinder-pawpularity-score/train.csv'
+test_path: '../../petfinder-pawpularity-score/test.csv'
+train_dir: '../../petfinder-pawpularity-score/train'
+test_dir: '../../petfinder-pawpularity-score/test'
+n_classes: 1
+target_col: 'Pawpularity'

@@ -1,25 +1,24 @@
 hydra:
   run:
     dir: ./outputs/${default.output_folder}
-default:
-  train_path: '../../petfinder-pawpularity-score/train.csv'
-  test_path: '../../petfinder-pawpularity-score/test.csv'
-  train_dir: '../../petfinder-pawpularity-score/train'
-  test_dir: '../../petfinder-pawpularity-score/test'
-  ckp_dir: '../../outputs/weights'
-  n_classes: 1
-  embedding_size: 256  
-  img_size: 256
-  output_folder: "test"
+
+output_folder: "test"
+
+defaults:
+  - data: petfinder
+  - wandb: config 
+
 model:
   train_batch_size: 64
   val_batch_size: 64
   num_epochs: 20
   num_workers: 2
-  mode: 'classifier'  # class, only_emb, default_classifier
-  backborn: 'resnet50'
-  metric: 'mlp' # ['add_margin', 'arc_margin', 'sphere', 'linear', "ver1", "ver2"]
-target_col: 'Pawpularity'
+  backbone: 'resnet50'
+  pretrained: True
+  head_1: 'linear'  # ['linear', 'MLP', "MLP_with_bn"]
+  head_2: 'None' # ['None', 'linear', 'MLP', "MLP_with_bn", 'add_margin', 'arc_margin', 'sphere']
+  loss: 'sbce'  # ['sbce', 'bce']
+
 fold_type: "skfold"
 n_fold: 5
 input_channel: 3
@@ -33,9 +32,6 @@ accumulate_grad_batches: 1
 max_grad_norm: 1000
 use_mixup: True
 
-fold: 0
-pretrained: False
-
 shd_para:
   scheduler: 'CosineAnnealingWarmRestarts'
   factor: 0.2 # ReduceLROnPlateau
@@ -46,8 +42,5 @@ shd_para:
   eta_min: 1e-5 # CosineAnnealingWarmRestarts
   lr: 1e-4
   min_lr: 1e-6
-wandb:
-  project: ""
-  entity: ""
 
 in_kaggle: False
